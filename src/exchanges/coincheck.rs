@@ -7,6 +7,7 @@ pub mod place_order;
 use crate::{config::Config, string_or_float, vec_string_or_float};
 use anyhow::Result;
 use log::debug;
+use reqwest::Client;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -80,8 +81,8 @@ impl State {
         })
     }
 
-    pub async fn get_btc_balance(&mut self, config: &Config) -> Result<()> {
-        if let Some(balance) = get_balance::balance().await? {
+    pub async fn get_btc_balance(&mut self, client: &Client, config: &Config) -> Result<()> {
+        if let Some(balance) = get_balance::balance(client).await? {
             if let (Some(btc), Some(btc_reserved)) = (balance.btc, balance.btc_reserved) {
                 self.btc_balance =
                     ((btc + btc_reserved) * config.size_base).round() / config.size_base;
@@ -90,8 +91,8 @@ impl State {
         Ok(())
     }
 
-    pub async fn get_active_orders(&mut self) -> Result<()> {
-        if let Some(orders) = get_active_orders::opens().await? {
+    pub async fn get_active_orders(&mut self, client: &Client) -> Result<()> {
+        if let Some(orders) = get_active_orders::opens(client).await? {
             let (mut buy_orders, mut sell_orders) = (Vec::new(), Vec::new());
 
             orders
@@ -102,15 +103,15 @@ impl State {
                     _ => (),
                 });
 
-            async fn get_order(orders: &mut Vec<Order>) -> Result<Option<Order>> {
+            async fn get_order(client: &Client, orders: &mut Vec<Order>) -> Result<Option<Order>> {
                 match orders.len() {
                     0 => Ok(None),
                     1 => Ok(Some(orders[0].clone())),
-                    // If there are multiple orders, pop one and cancel the rest
                     _ => {
                         if let Some(order) = orders.pop() {
+                            // cancel all other orders
                             for order in orders {
-                                cancel_order::cancel_order(order.id).await?;
+                                cancel_order::cancel_order(client, order.id).await?;
                             }
                             Ok(Some(order))
                         } else {
@@ -120,8 +121,8 @@ impl State {
                 }
             }
 
-            self.buy_order = get_order(&mut buy_orders).await?;
-            self.sell_order = get_order(&mut sell_orders).await?;
+            self.buy_order = get_order(&client, &mut buy_orders).await?;
+            self.sell_order = get_order(&client, &mut sell_orders).await?;
         }
 
         Ok(())
@@ -242,14 +243,14 @@ impl State {
         }
     }
 
-    pub async fn execute_orders(&mut self, config: &Config) -> Result<()> {
+    pub async fn execute_orders(&mut self, client: &Client, config: &Config) -> Result<()> {
         if let (Some(best_bid_price), Some(best_ask_price)) =
             (self.best_bid_price, self.best_ask_price)
         {
             if let Some(order) = &self.buy_order {
                 // If the best bid price has changed, cancel the existing buy order
                 if best_bid_price != order.price {
-                    let res = cancel_order::cancel_order(order.id).await?;
+                    let res = cancel_order::cancel_order(client, order.id).await?;
                     if res.success {
                         self.buy_order = None;
                     }
@@ -257,22 +258,28 @@ impl State {
             } else if self.btc_balance < 0.005 {
                 // If there is no existing buy order and the BTC balance is below the minimum order size, place a new buy order
                 self.buy_order =
-                    place_order::order(&self.symbol, "buy", best_bid_price, config.size).await?;
+                    place_order::order(client, &self.symbol, "buy", best_bid_price, config.size)
+                        .await?;
             }
 
             if let Some(order) = &self.sell_order {
                 // If the best ask price has changed, cancel the existing sell order
                 if best_ask_price != order.price {
-                    let res = cancel_order::cancel_order(order.id).await?;
+                    let res = cancel_order::cancel_order(client, order.id).await?;
                     if res.success {
                         self.sell_order = None;
                     }
                 }
             } else if self.btc_balance >= 0.005 {
                 // If there is no existing sell order and the BTC balance is above the minimum order size, place a new sell order
-                self.sell_order =
-                    place_order::order(&self.symbol, "sell", best_ask_price, self.btc_balance)
-                        .await?;
+                self.sell_order = place_order::order(
+                    client,
+                    &self.symbol,
+                    "sell",
+                    best_ask_price,
+                    self.btc_balance,
+                )
+                .await?;
             }
         }
 

@@ -9,14 +9,14 @@ use serde::Deserialize;
 pub struct Response {
     pub success: bool,
     #[serde(with = "opt_string_or_float")]
-    #[serde(default)]
+    pub jpy: Option<f64>,
+    #[serde(with = "opt_string_or_float")]
     pub btc: Option<f64>,
     #[serde(with = "opt_string_or_float")]
-    #[serde(default)]
     pub btc_reserved: Option<f64>,
 }
 
-pub async fn balance() -> Result<Option<Response>> {
+pub async fn balance(client: &Client) -> Result<Option<Response>> {
     let (api_key, secret_key) = get_keys()?;
     let timestamp = get_timestamp()?;
     let endpoint = "https://coincheck.com";
@@ -25,7 +25,7 @@ pub async fn balance() -> Result<Option<Response>> {
     let text = format!("{}{}{}", timestamp, endpoint, path);
     let sign = sign(&text, &secret_key)?;
 
-    let res: Response = Client::new()
+    let res: Response = client
         .get(&(endpoint.to_string() + path))
         .header("content-type", "application/json")
         .header("ACCESS-KEY", api_key)
@@ -50,12 +50,14 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use log::debug;
+    use reqwest::Client;
 
     #[tokio::test]
     async fn it_works() -> Result<()> {
         env_logger::init();
 
-        let list = balance().await?;
+        let client = Client::new();
+        let list = balance(&client).await?;
         debug!("{:?}", list);
 
         Ok(())

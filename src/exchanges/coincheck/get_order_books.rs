@@ -1,9 +1,11 @@
 use super::OrderBook;
 use anyhow::Result;
-// use log::debug;
+use reqwest::Client;
 
-pub async fn get_order_books() -> Result<OrderBook> {
-    let res: OrderBook = reqwest::get("https://coincheck.com/api/order_books")
+pub async fn get_order_books(client: &Client) -> Result<OrderBook> {
+    let res: OrderBook = client
+        .get("https://coincheck.com/api/order_books")
+        .send()
         .await?
         .json()
         .await?;

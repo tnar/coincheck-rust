@@ -15,7 +15,13 @@ struct Response {
     pub order_type: Option<String>,
 }
 
-pub async fn order(symbol: &str, side: &str, price: f64, size: f64) -> Result<Option<Order>> {
+pub async fn order(
+    client: &Client,
+    symbol: &str,
+    side: &str,
+    price: f64,
+    size: f64,
+) -> Result<Option<Order>> {
     let (api_key, secret_key) = get_keys()?;
     let timestamp = get_timestamp()?;
     let endpoint = "https://coincheck.com";
@@ -25,7 +31,7 @@ pub async fn order(symbol: &str, side: &str, price: f64, size: f64) -> Result<Op
     let text = format!("{}{}{}{}", timestamp, endpoint, path, &parameters);
     let sign = sign(&text, &secret_key)?;
 
-    let res: Response = Client::new()
+    let res: Response = client
         .post(&(endpoint.to_string() + path))
         .header("content-type", "application/json")
         .header("ACCESS-KEY", api_key)

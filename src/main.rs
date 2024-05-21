@@ -5,6 +5,7 @@ use coincheck_rust::{
 };
 use futures_util::{SinkExt, StreamExt};
 use log::debug;
+use reqwest::Client;
 use serde_json::json;
 use std::{process, time::Duration};
 use tokio::signal::unix::SignalKind;
@@ -18,6 +19,7 @@ async fn main() -> Result<()> {
 
     let config = Config::new(SYMBOL, 0.02, 1.0, 0.00000001)?;
     let mut state = coincheck::State::new(SYMBOL)?;
+    let client = Client::new();
 
     // Connect to the Coincheck WebSocket API
     let (coincheck_stream, _) = connect_async("wss://ws-api.coincheck.com").await?;
@@ -55,7 +57,7 @@ async fn main() -> Result<()> {
     let mut sigterm = tokio::signal::unix::signal(SignalKind::terminate())?;
     let mut sigint = tokio::signal::unix::signal(SignalKind::interrupt())?;
 
-    let orderbook = coincheck::get_order_books::get_order_books().await?;
+    let orderbook = coincheck::get_order_books::get_order_books(&client).await?;
     state.order_book = Some(orderbook);
 
     loop {
@@ -90,20 +92,20 @@ async fn main() -> Result<()> {
             }
             // Wait for the get state interval to tick
             _ = get_state_interval.tick() => {
-                state.get_btc_balance(&config).await?;
-                state.get_active_orders().await?;
+                state.get_btc_balance(&client, &config).await?;
+                state.get_active_orders(&client).await?;
             }
             // Wait for the execute orders interval to tick
             _ = execute_orders_interval.tick() => {
-                state.execute_orders(&config).await?;
+                state.execute_orders(&client, &config).await?;
             }
             // Wait for a SIGTERM signal
             _ = sigterm.recv() => {
                 if let Some(order) = state.buy_order {
-                    coincheck::cancel_order::cancel_order(order.id).await?;
+                    coincheck::cancel_order::cancel_order(&client, order.id).await?;
                 }
                 if let Some(order) = state.sell_order {
-                    coincheck::cancel_order::cancel_order(order.id).await?;
+                    coincheck::cancel_order::cancel_order(&client, order.id).await?;
                 }
                 coincheck_write.close().await?;
                 process::exit(0);
@@ -111,10 +113,10 @@ async fn main() -> Result<()> {
             // Wait for a SIGINT signal
             _ = sigint.recv() => {
                 if let Some(order) = state.buy_order {
-                    coincheck::cancel_order::cancel_order(order.id).await?;
+                    coincheck::cancel_order::cancel_order(&client, order.id).await?;
                 }
                 if let Some(order) = state.sell_order {
-                    coincheck::cancel_order::cancel_order(order.id).await?;
+                    coincheck::cancel_order::cancel_order(&client, order.id).await?;
                 }
                 coincheck_write.close().await?;
                 process::exit(0);
@@ -122,10 +124,10 @@ async fn main() -> Result<()> {
             // Wait for a Ctrl-C signal from the user
             _ = tokio::signal::ctrl_c() => {
                 if let Some(order) = state.buy_order {
-                    coincheck::cancel_order::cancel_order(order.id).await?;
+                    coincheck::cancel_order::cancel_order(&client, order.id).await?;
                 }
                 if let Some(order) = state.sell_order {
-                    coincheck::cancel_order::cancel_order(order.id).await?;
+                    coincheck::cancel_order::cancel_order(&client, order.id).await?;
                 }
                 coincheck_write.close().await?;
                 process::exit(0);

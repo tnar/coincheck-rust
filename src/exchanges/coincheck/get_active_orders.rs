@@ -11,7 +11,7 @@ pub struct Response {
     pub orders: Option<Vec<Order>>,
 }
 
-pub async fn opens() -> Result<Option<Vec<Order>>> {
+pub async fn opens(client: &Client) -> Result<Option<Vec<Order>>> {
     let (api_key, secret_key) = get_keys()?;
     let timestamp = get_timestamp()?;
     let endpoint = "https://coincheck.com";
@@ -20,7 +20,7 @@ pub async fn opens() -> Result<Option<Vec<Order>>> {
     let text = format!("{}{}{}", timestamp, endpoint, path);
     let sign = sign(&text, &secret_key)?;
 
-    let res: Response = Client::new()
+    let res: Response = client
         .get(&(endpoint.to_string() + path))
         .header("content-type", "application/json")
         .header("ACCESS-KEY", api_key)
@@ -45,12 +45,14 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use log::debug;
+    use reqwest::Client;
 
     #[tokio::test]
     async fn it_works() -> Result<()> {
         env_logger::init();
 
-        let list = opens().await?;
+        let client = Client::new();
+        let list = opens(&client).await?;
         debug!("{:?}", list);
 
         Ok(())
