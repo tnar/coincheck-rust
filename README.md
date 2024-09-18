@@ -1,4 +1,3 @@
-# Start of Selection
 # Coincheck Rust
 
 A high-frequency algorithmic trading bot for [Coincheck](https://coincheck.com/), a major Japanese cryptocurrency exchange. Built with Rust, this project leverages asynchronous programming and WebSockets to handle real-time data for efficient trading operations.
